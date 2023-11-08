@@ -42,6 +42,7 @@ class BestMatchFinder:
         self.top_k = top_k
         self.normalize = normalize
         self.r = r
+        self.bestmatch = {}
 
 
     def _apply_exclusion_zone(self, a, idx, excl_zone):
@@ -64,7 +65,7 @@ class BestMatchFinder:
         a: numpy.ndarrray
             The array which is applied the exclusion zone.
         """
-        
+        a = np.array(a, dtype=np.float64)
         zone_start = max(0, idx - excl_zone)
         zone_stop = min(a.shape[-1], idx + excl_zone)
         a[zone_start : zone_stop + 1] = np.inf
@@ -149,8 +150,11 @@ class NaiveBestMatchFinder(BestMatchFinder):
             excl_zone = 0
         else:
             excl_zone = int(np.ceil(m / self.excl_zone_denom))
-        
-        # INSERT YOUR CODE
+        q_len = len(self.query)
+
+        distances = [DTW_distance(z_normalize(self.query), z_normalize(self.ts_data[e]), self.r) for e in range(0, self.ts_data.shape[1])] 
+    
+        self.bestmatch = self._top_k_match(distances, m, bsf, excl_zone)
 
         return self.bestmatch
 
