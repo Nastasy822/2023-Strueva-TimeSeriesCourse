@@ -27,5 +27,4 @@ ENV PATH="$POETRY_VENV/bin:$PATH"
 RUN poetry config virtualenvs.create false \
   && poetry install
 
-
 CMD ["jupyter-lab","--ip=0.0.0.0","--no-browser","--allow-root"]
