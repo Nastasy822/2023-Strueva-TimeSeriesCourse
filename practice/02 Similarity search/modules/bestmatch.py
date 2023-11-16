@@ -42,7 +42,6 @@ class BestMatchFinder:
         self.top_k = top_k
         self.normalize = normalize
         self.r = r
-        self.bestmatch = {}
 
 
     def _apply_exclusion_zone(self, a, idx, excl_zone):
@@ -65,7 +64,7 @@ class BestMatchFinder:
         a: numpy.ndarrray
             The array which is applied the exclusion zone.
         """
-        a = np.array(a, dtype=np.float64)
+        
         zone_start = max(0, idx - excl_zone)
         zone_stop = min(a.shape[-1], idx + excl_zone)
         a[zone_start : zone_stop + 1] = np.inf
@@ -120,7 +119,6 @@ class BestMatchFinder:
 
 
     def perform(self):
-
         raise NotImplementedError
 
 
@@ -142,22 +140,37 @@ class NaiveBestMatchFinder(BestMatchFinder):
         best_match_results: dict
             Dictionary containing results of the naive algorithm.
         """
+        # Define shape
+        # Shape defines by query (421 value) shape and slices input data (3000-421+1 = 2580 values)
         N, m = self.ts_data.shape
-        
+
+        # Define best so far tmp
         bsf = float("inf")
         
+        # Define exclusion zone
         if (self.excl_zone_denom is None):
             excl_zone = 0
         else:
             excl_zone = int(np.ceil(m / self.excl_zone_denom))
-        q_len = len(self.query)
+        
+        # Define array for save distances
+        distances = []
+        
+        # Compute DTW_Distances
+        for idx in range(N):
+            subseq = self.ts_data[idx]
+            
+            if self.normalize:
+                subseq = z_normalize(subseq)
+                self.query = z_normalize(self.query)
+            
+            dist = DTW_distance(subseq, self.query, self.r)
+            distances.append(dist)
 
-        distances = [DTW_distance(z_normalize(self.query), z_normalize(self.ts_data[e]), self.r) for e in range(0, self.ts_data.shape[1])] 
-    
+        # Define bestmatch sequence (top_k=2)
         self.bestmatch = self._top_k_match(distances, m, bsf, excl_zone)
 
         return self.bestmatch
-
 
 class UCR_DTW(BestMatchFinder):
     """
@@ -188,7 +201,8 @@ class UCR_DTW(BestMatchFinder):
 
         lb_Kim = 0
 
-        # INSERT YOUR CODE
+        # [0] - first element, [-1] - last element
+        lb_Kim = np.sqrt((subs1[0] - subs2[0])**2) + np.sqrt((subs1[-1] - subs2[-1])**2)
         
         return lb_Kim
 
@@ -214,7 +228,11 @@ class UCR_DTW(BestMatchFinder):
             LB_Keogh lower bound.
         """
         
+        lb_Keogh = 0
+        
         res = []
+
+        # Compute results using formula
         for i in range(len(subs1)):
             if subs2[i] > max(subs1[max(0, i-r):min(len(subs1), i+r+1)]):
                 res.append((subs2[i] - max(subs1[max(0, i-r):min(len(subs1), i+r+1)]))**2)
@@ -227,67 +245,72 @@ class UCR_DTW(BestMatchFinder):
 
         return lb_Keogh
 
-
     def perform(self):
-        """
-        Perform the best match finder using UCR-DTW algorithm.
-        
-        Returns
-        -------
-        best_match_results: dict
-            Dictionary containing results of UCR-DTW algorithm.
-        """
-        N, m = self.ts_data.shape
-        
-        bsf = float("inf")
-        
-        if (self.excl_zone_denom is None):
-            excl_zone = 0
-        else:
-            excl_zone = int(np.ceil(m / self.excl_zone_denom))
-        
-        self.lb_Kim_num = 0
-        self.lb_KeoghQC_num = 0
-        self.lb_KeoghCQ_num = 0
-        
-        distances = []
-        
-        for subseq_idx in range(N):
-            subseq = self.ts_data[subseq_idx]
+            """
+            Perform the best match finder using UCR-DTW algorithm.
+            
+            Returns
+            -------
+            best_match_results: dict
+                Dictionary containing results of UCR-DTW algorithm.
+            """
+            N, m = self.ts_data.shape
+            
+            bsf = float("inf")
+            
+            if (self.excl_zone_denom is None):
+                excl_zone = 0
+            else:
+                excl_zone = int(np.ceil(m / self.excl_zone_denom))
+
+            # Zero the variables for counting the number of lower bounds by the algorithms used
+            self.lb_Kim_num = 0
+            self.lb_KeoghQC_num = 0
+            self.lb_KeoghCQ_num = 0
             
             if self.normalize:
-                subseq = z_normalize(subseq)
                 self.query = z_normalize(self.query)
+            
+            distances = []
+            
+            for idx in range(N):
+                # Get subsequence
+                subseq = self.ts_data[idx]
+                
+                # Normalize if required
+                if self.normalize:
+                    subseq = z_normalize(subseq)
 
+                # If the calculation results of the method are greater than bsf - increment
+                if self._LB_Kim(self.query, subseq) > bsf:
+                    self.lb_Kim_num += 1
+                    dist = float("inf")
+                    distances.append(dist)
+                if self._LB_Keogh(self.query, subseq, int(self.r*m)) > bsf:
+                    self.lb_KeoghQC_num += 1
+                    dist = float("inf")
+                    distances.append(dist)
+                if self._LB_Keogh(subseq, self.query, int(self.r*m)) > bsf:
+                    self.lb_KeoghCQ_num += 1
+                    dist = float("inf")
+                    distances.append(dist)
 
-            if self._LB_Kim(self.query, subseq) > bsf:
-                self.lb_Kim_num += 1
-                dist = float("inf")
+                # Compute distance
+                dist = DTW_distance(self.query, subseq, self.r)
+
+                # Add distance in log
                 distances.append(dist)
-                continue
-            if self._LB_Keogh(self.query, subseq, int(self.r*m)) > bsf:
-                self.lb_KeoghQC_num += 1
-                dist = float("inf")
-                distances.append(dist)
-                continue
-            if self._LB_Keogh(subseq, self.query, int(self.r*m)) > bsf:
-                self.lb_KeoghCQ_num += 1
-                dist = float("inf")
-                distances.append(dist)
-                continue
 
-            dist = DTW_distance(self.query, subseq, self.r)
-            distances.append(dist)
-            if dist < bsf:
-                bsf = dist
+                # If distance less than bfs, define new bfs
+                if dist < bsf:
+                    bsf = dist
 
-
-        self.bestmatch = self._top_k_match(distances, m, bsf, excl_zone)
-
-
-        return {'index' : self.bestmatch['index'],
-                'distance' : self.bestmatch['distance'],
-                'lb_Kim_num': self.lb_Kim_num,
-                'lb_KeoghCQ_num': self.lb_KeoghCQ_num,
-                'lb_KeoghQC_num': self.lb_KeoghQC_num
-                }
+            # Find new bestmatch
+            self.bestmatch = self._top_k_match(distances, m, bsf, excl_zone)
+            
+            return {'index' : self.bestmatch['index'],
+                    'distance' : self.bestmatch['distance'],
+                    'lb_Kim_num': self.lb_Kim_num,
+                    'lb_KeoghCQ_num': self.lb_KeoghCQ_num,
+                    'lb_KeoghQC_num': self.lb_KeoghQC_num
+                    }

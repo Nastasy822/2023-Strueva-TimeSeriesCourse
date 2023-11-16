@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "swatch-jupyterlab"
+name = "susu-jupyterlab"
 version = "0.1.0"
 description = ""
 authors = ["Anastasiya Strueva <nastasy822@gmail.com>"]
